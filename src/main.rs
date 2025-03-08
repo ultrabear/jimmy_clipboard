@@ -35,13 +35,13 @@ where
 struct CsvEntry {
     #[serde(rename = "System Name")]
     system_name: String,
-    distance: String,
+    distance: f64,
     #[serde(rename = "Distance Remaining")]
-    distance_remaining: String,
+    distance_remaining: f64,
     #[serde(rename = "Fuel Left")]
-    fuel_left: String,
+    fuel_left: f64,
     #[serde(rename = "Fuel Used")]
-    fuel_used: String,
+    fuel_used: f64,
     #[serde(deserialize_with = "yesno_bool")]
     refuel: bool,
     #[serde(rename = "Neutron Star", deserialize_with = "yesno_bool")]
@@ -52,13 +52,31 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
     let args = Args::parse();
     let clipboard = Clipboard::new()?;
 
-
-
     let records: Vec<CsvEntry> = Reader::from_path(args.csv_file)?
         .deserialize()
         .collect::<Result<_, _>>()?;
 
+    let (f, l) = match (records.first(), records.last()) {
+        (Some(f), Some(l)) => (f, l),
+        _ => return Err("No Systems in CSV file".into()),
+    };
 
+    println!("\x1b[37mRoute Summary:");
+    println!(
+        "  \x1b[37mJourney: \x1b[96m{} \x1b[94m==\x1b[91m{:.3}kly\x1b[94m==> \x1b[96m{}",
+        f.system_name,
+        f.distance_remaining / 1000.,
+        l.system_name
+    );
+    println!("  \x1b[37mTotal Jumps: \x1b[96m{}", records.len() - 1);
+    println!(
+        "  \x1b[37mNeutron Stars: \x1b[96m{}\x1b[0m",
+        records.iter().filter(|system| system.neutron_star).count()
+    );
+    println!(
+        "  \x1b[37mFuel Stops: \x1b[96m{}\x1b[0m",
+        records.iter().filter(|system| system.refuel).count()
+    );
 
     Ok(())
 }
