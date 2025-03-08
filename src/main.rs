@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use arboard::Clipboard;
 use clap::Parser;
 use csv::Reader;
 use serde::Deserialize;
@@ -47,11 +48,17 @@ struct CsvEntry {
     neutron_star: bool,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn core::error::Error>> {
     let args = Args::parse();
+    let clipboard = Clipboard::new()?;
 
-    for record in Reader::from_path(args.csv_file).unwrap().deserialize() {
-        let record: CsvEntry = record.unwrap();
-        println!("{record:?}");
-    }
+
+
+    let records: Vec<CsvEntry> = Reader::from_path(args.csv_file)?
+        .deserialize()
+        .collect::<Result<_, _>>()?;
+
+
+
+    Ok(())
 }
