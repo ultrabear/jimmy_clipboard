@@ -144,6 +144,7 @@ dependencies = [
  "clap",
  "csv",
  "serde",
+ "serde_derive",
 ]
 
 [[package]]
