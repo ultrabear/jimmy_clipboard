@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use arboard::Clipboard;
 use clap::Parser;
 use csv::Reader;
+use cursive::{theme::{BorderStyle, Palette, Theme}, views::{Dialog, TextView}};
 use serde::Deserialize;
 
 #[derive(clap::Parser)]
@@ -77,6 +78,20 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
         "  \x1b[37mFuel Stops: \x1b[96m{}\x1b[0m",
         records.iter().filter(|system| system.refuel).count()
     );
+
+    let mut ui = cursive::termion();
+
+    ui.set_theme(Theme {
+        shadow: false,
+        borders: BorderStyle::Outset,
+        palette: Palette::terminal_default(),
+    });
+
+    ui.add_global_callback('q', |s| s.quit());
+
+    ui.add_layer(Dialog::new().button("Quit", |s| s.quit()).button("hi", |_|{}));
+
+    ui.run();
 
     Ok(())
 }
