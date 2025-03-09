@@ -1,10 +1,16 @@
-use std::path::PathBuf;
+use core::fmt;
+use std::{path::PathBuf, time::Duration};
 
 use arboard::Clipboard;
 use clap::Parser;
 use csv::Reader;
-use cursive::{theme::{BorderStyle, Palette, Theme}, views::{Dialog, TextView}};
+use cursive::{
+    theme::{BorderStyle, Palette, Theme},
+    view::{Finder, IntoBoxedView, Nameable},
+    views::{DummyView, LinearLayout, ListChild, ListView, Panel, ScrollView, TextView},
+};
 use serde::Deserialize;
+use std::process::Command;
 
 #[derive(clap::Parser)]
 #[clap(version)]
@@ -12,6 +18,17 @@ use serde::Deserialize;
 struct Args {
     /// Input csv data from spansh filename
     csv_file: PathBuf,
+
+    /// Enable focus stealing to ED once a next system copy request has been made
+    #[arg(short, long)]
+    focus_steal: bool,
+}
+
+fn focus_elite() {
+    _ = Command::new("wmctrl")
+        .args(["-a", "Elite - Dangerous (CLIENT)"])
+        .spawn()
+        .and_then(|mut v| v.wait());
 }
 
 fn yesno_bool<'de, D>(d: D) -> Result<bool, D::Error>
@@ -49,35 +66,103 @@ struct CsvEntry {
     neutron_star: bool,
 }
 
-fn main() -> Result<(), Box<dyn core::error::Error>> {
-    let args = Args::parse();
-    let clipboard = Clipboard::new()?;
+struct TrueColor {
+    rgb: [u8; 3],
+    background: bool,
+}
 
-    let records: Vec<CsvEntry> = Reader::from_path(args.csv_file)?
-        .deserialize()
-        .collect::<Result<_, _>>()?;
+impl TrueColor {
+    fn bg(r: u8, g: u8, b: u8) -> Self {
+        Self {
+            rgb: [r, g, b],
+            background: true,
+        }
+    }
+}
 
+impl fmt::Display for TrueColor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let target = if self.background { "48" } else { "38" };
+
+        let [r, g, b] = self.rgb;
+
+        write!(f, "\x1b[{target};2;{r};{g};{b}m")
+    }
+}
+
+impl fmt::Display for CsvEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            system_name,
+            distance,
+            distance_remaining,
+            fuel_left,
+            fuel_used,
+            refuel,
+            neutron_star,
+        } = self;
+
+        match (refuel, neutron_star) {
+            (true, _) => write!(f, "{}", TrueColor::bg(32, 16, 0))?,
+            (_, true) => write!(f, "{}", TrueColor::bg(0, 0, 64))?,
+            _ => (),
+        }
+
+        writeln!(
+            f,
+            "\x1b[96m{system_name}\x1b[37m: jump:\x1b[96m{distance:0.1}\x1b[37mly"
+        )?;
+
+        write!(
+            f,
+            "remain:\x1b[96m{distance_remaining:0.1}\x1b[37mly tank:\x1b[96m{fuel_used:.1}\x1b[37mT/\x1b[96m{fuel_left:.1}\x1b[37mT "
+        )?;
+
+        match (refuel, neutron_star) {
+            (true, _) => write!(f, "\x1b[97mRefuel")?,
+            (_, true) => write!(f, "\x1b[97mNeutron")?,
+            _ => (),
+        }
+
+        Ok(())
+    }
+}
+
+fn summary(records: &[CsvEntry]) -> Result<String, String> {
     let (f, l) = match (records.first(), records.last()) {
         (Some(f), Some(l)) => (f, l),
         _ => return Err("No Systems in CSV file".into()),
     };
 
-    println!("\x1b[37mRoute Summary:");
-    println!(
-        "  \x1b[37mJourney: \x1b[96m{} \x1b[94m==\x1b[91m{:.3}kly\x1b[94m==> \x1b[96m{}",
+    let l1 = format!("\x1b[37mRoute Summary:");
+    let l2 = format!(
+        "  \x1b[37mTrip: \x1b[96m{} \x1b[94m=\x1b[91m{:.3}kly\x1b[94m=> \x1b[96m{}",
         f.system_name,
         f.distance_remaining / 1000.,
         l.system_name
     );
-    println!("  \x1b[37mTotal Jumps: \x1b[96m{}", records.len() - 1);
-    println!(
+    let l3 = format!("  \x1b[37mTotal Jumps: \x1b[96m{}", records.len() - 1);
+    let l4 = format!(
         "  \x1b[37mNeutron Stars: \x1b[96m{}\x1b[0m",
         records.iter().filter(|system| system.neutron_star).count()
     );
-    println!(
+    let l5 = format!(
         "  \x1b[37mFuel Stops: \x1b[96m{}\x1b[0m",
         records.iter().filter(|system| system.refuel).count()
     );
+
+    Ok([l1, l2, l3, l4, l5].join("\n"))
+}
+
+fn main() -> Result<(), Box<dyn core::error::Error>> {
+    let args = Args::parse();
+    let mut clipboard = Clipboard::new()?;
+
+    let records: Vec<CsvEntry> = Reader::from_path(args.csv_file)?
+        .deserialize()
+        .collect::<Result<_, _>>()?;
+
+    let spanned = summary(&records)?;
 
     let mut ui = cursive::termion();
 
@@ -87,9 +172,77 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
         palette: Palette::terminal_default(),
     });
 
-    ui.add_global_callback('q', |s| s.quit());
+    let records_ref = records.clone();
 
-    ui.add_layer(Dialog::new().button("Quit", |s| s.quit()).button("hi", |_|{}));
+    ui.add_global_callback('q', |s| s.quit());
+    ui.add_global_callback(' ', move |s| {
+        let mut view = s
+            .screen_mut()
+            .find_name::<ListView>("progress")
+            .expect("Must Exist");
+
+        view.remove_child(0);
+        view.remove_child(0);
+
+        if view.is_empty() {
+            s.quit();
+        } else {
+            let ListChild::Row(id, _) = view.get_row(0) else {
+                unreachable!()
+            };
+
+            let id = id
+                .parse::<usize>()
+                .expect("only valid indexes of records vec");
+
+            let sys_name = &records_ref[id].system_name;
+
+            _ = clipboard.set_text(sys_name.clone());
+
+            let mut clipview = s
+                .screen_mut()
+                .find_name::<TextView>("clip_info")
+                .expect("must exist");
+
+            let fmt = format!("Copied: '\x1b[96m{sys_name}\x1b[0m' to clipboard\nSetting focus back to Elite Dangerous");
+
+            clipview.set_content(cursive::utils::markup::ansi::parse(fmt));
+
+
+
+        }
+    });
+
+    let mut list = ListView::new();
+
+    list.set_children(
+        records
+            .iter()
+            .enumerate()
+            .flat_map(|(idx, r)| {
+                [
+                    ListChild::Row(
+                        idx.to_string(),
+                        TextView::new(cursive::utils::markup::ansi::parse(r.to_string()))
+                            .into_boxed_view(),
+                    ),
+                    ListChild::Delimiter,
+                ]
+            })
+            .collect(),
+    );
+
+    ui.add_layer(
+        LinearLayout::horizontal()
+            .child(ScrollView::new(list.with_name("progress")))
+            .child(
+                LinearLayout::vertical()
+                    .child(Panel::new(TextView::new(
+                        cursive::utils::markup::ansi::parse(spanned),
+                    )))
+                    .child(Panel::new(TextView::new("Welcome to JimmyClipboard").with_name("clip_info"))),
+            ),
+    );
 
     ui.run();
 
