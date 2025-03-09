@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
 
 use arboard::Clipboard;
 use clap::Parser;
@@ -7,7 +7,7 @@ use csv::Reader;
 use cursive::{
     theme::{BorderStyle, Palette, Theme},
     view::{Finder, IntoBoxedView, Nameable},
-    views::{DummyView, LinearLayout, ListChild, ListView, Panel, ScrollView, TextView},
+    views::{LinearLayout, ListChild, ListView, Panel, ScrollView, TextView},
 };
 use serde::Deserialize;
 use std::process::Command;
@@ -134,7 +134,7 @@ fn summary(records: &[CsvEntry]) -> Result<String, String> {
         _ => return Err("No Systems in CSV file".into()),
     };
 
-    let l1 = format!("\x1b[37mRoute Summary:");
+    let l1 = "\x1b[37mRoute Summary:".to_string();
     let l2 = format!(
         "  \x1b[37mTrip: \x1b[96m{} \x1b[94m=\x1b[91m{:.3}kly\x1b[94m=> \x1b[96m{}",
         f.system_name,
@@ -208,6 +208,8 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
 
             clipview.set_content(cursive::utils::markup::ansi::parse(fmt));
 
+            focus_elite();
+
 
 
         }
@@ -240,7 +242,9 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
                     .child(Panel::new(TextView::new(
                         cursive::utils::markup::ansi::parse(spanned),
                     )))
-                    .child(Panel::new(TextView::new("Welcome to JimmyClipboard").with_name("clip_info"))),
+                    .child(Panel::new(
+                        TextView::new("Welcome to JimmyClipboard").with_name("clip_info"),
+                    )),
             ),
     );
 
