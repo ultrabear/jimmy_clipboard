@@ -6,8 +6,8 @@ use clap::Parser;
 use csv::Reader;
 use cursive::{
     theme::{BorderStyle, Palette, Theme},
-    view::{Finder, IntoBoxedView, Nameable},
-    views::{LinearLayout, ListChild, ListView, Panel, ScrollView, TextView},
+    view::{Finder, IntoBoxedView, Nameable, SizeConstraint},
+    views::{LinearLayout, ListChild, ListView, Panel, ResizedView, ScrollView, TextView},
 };
 use serde::Deserialize;
 use std::process::Command;
@@ -157,6 +157,7 @@ fn summary(records: &[CsvEntry]) -> Result<String, String> {
 fn main() -> Result<(), Box<dyn core::error::Error>> {
     let args = Args::parse();
     let mut clipboard = Clipboard::new()?;
+    let focus_steal = args.focus_steal;
 
     let records: Vec<CsvEntry> = Reader::from_path(args.csv_file)?
         .deserialize()
@@ -181,6 +182,12 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
             .find_name::<ListView>("progress")
             .expect("Must Exist");
 
+        let ListChild::Row(prev_id, _) = view.get_row(0) else {
+            unreachable!()
+        };
+
+        let prev_id: usize = prev_id.parse().expect("only valid indexes of records vec"); 
+
         view.remove_child(0);
         view.remove_child(0);
 
@@ -204,14 +211,22 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
                 .find_name::<TextView>("clip_info")
                 .expect("must exist");
 
-            let fmt = format!("Copied: '\x1b[96m{sys_name}\x1b[0m' to clipboard\nSetting focus back to Elite Dangerous");
+            let steal = if focus_steal {
+                "\nSetting focus back to Elite Dangerous"
+            } else {
+                ""
+            };
+
+            let last_system = &records_ref[prev_id];
+            let next_jump = &records_ref[id];
+
+            let fmt = format!("Copied: '\x1b[96m{sys_name}\x1b[0m' to clipboard{steal}\n\n\x1b[37mCurrent System:\n{last_system}\x1b[0m\n\n\x1b[37mNext Jump:\n{next_jump}\n");
 
             clipview.set_content(cursive::utils::markup::ansi::parse(fmt));
 
-            focus_elite();
-
-
-
+            if focus_steal {
+                focus_elite();
+            }
         }
     });
 
@@ -242,9 +257,11 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
                     .child(Panel::new(TextView::new(
                         cursive::utils::markup::ansi::parse(spanned),
                     )))
-                    .child(Panel::new(
+                    .child(Panel::new(ResizedView::new(
+                        SizeConstraint::Free,
+                        SizeConstraint::AtLeast(10),
                         TextView::new("Welcome to JimmyClipboard").with_name("clip_info"),
-                    )),
+                    ))),
             ),
     );
 
