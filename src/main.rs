@@ -66,6 +66,29 @@ struct CsvEntry {
     neutron_star: bool,
 }
 
+impl CsvEntry {
+    fn star(&self) -> StarClass {
+        let Self {
+            refuel,
+            neutron_star,
+            ..
+        } = self;
+
+        match (refuel, neutron_star) {
+            (true, _) => StarClass::Refuel,
+            (_, true) => StarClass::Neutron,
+            _ => StarClass::Plain,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+enum StarClass {
+    Neutron,
+    Refuel,
+    Plain,
+}
+
 struct TrueColor {
     rgb: [u8; 3],
     background: bool,
@@ -102,10 +125,10 @@ impl fmt::Display for CsvEntry {
             neutron_star,
         } = self;
 
-        match (refuel, neutron_star) {
-            (true, _) => write!(f, "{}", TrueColor::bg(32, 16, 0))?,
-            (_, true) => write!(f, "{}", TrueColor::bg(0, 0, 64))?,
-            _ => (),
+        match self.star() {
+            StarClass::Refuel => write!(f, "{}", TrueColor::bg(32, 16, 0))?,
+            StarClass::Neutron => write!(f, "{}", TrueColor::bg(0, 0, 64))?,
+            StarClass::Plain => (),
         }
 
         writeln!(
@@ -118,10 +141,10 @@ impl fmt::Display for CsvEntry {
             "remain:\x1b[96m{distance_remaining:0.1}\x1b[37mly tank:\x1b[96m{fuel_used:.1}\x1b[37mT/\x1b[96m{fuel_left:.1}\x1b[37mT "
         )?;
 
-        match (refuel, neutron_star) {
-            (true, _) => write!(f, "\x1b[97mRefuel")?,
-            (_, true) => write!(f, "\x1b[97mNeutron")?,
-            _ => (),
+        match self.star() {
+            StarClass::Refuel => write!(f, "\x1b[97mRefuel")?,
+            StarClass::Neutron => write!(f, "\x1b[97mNeutron")?,
+            StarClass::Plain => (),
         }
 
         Ok(())
